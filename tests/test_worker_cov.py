@@ -11,7 +11,6 @@ def _mocks():
         SecretLoader=MagicMock(), configure_logger=MagicMock(), configure_tracing=MagicMock(),
         CacheProvider=MagicMock(), RedisClient=MagicMock(), DbContext=MagicMock(),
         MongoDbContextProvider=MagicMock(), EventRegistry=MagicMock(), get_blocks_secret=MagicMock(),
-        ConfigAzureServiceBus=MagicMock(), AzureMessageClient=MagicMock(), AzureMessageWorker=MagicMock(),
         RabbitMessageClient=MagicMock(), RabbitMessageWorker=MagicMock(),
         initialize_tenant_service=AsyncMock(),
     )
