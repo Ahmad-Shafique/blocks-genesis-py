@@ -9,7 +9,7 @@ LIFESPAN_PATCHES = dict(
     SecretLoader=MagicMock(), configure_logger=MagicMock(), configure_tracing=MagicMock(),
     CacheProvider=MagicMock(), RedisClient=MagicMock(), DbContext=MagicMock(),
     MongoDbContextProvider=MagicMock(), get_blocks_secret=MagicMock(),
-    RabbitMessageClient=MagicMock(), AzureMessageClient=MagicMock(),
+    RabbitMessageClient=MagicMock(),
     initialize_tenant_service=AsyncMock(),
 )
 
@@ -45,7 +45,7 @@ def test_fast_api_app_returns_app():
 
 @pytest.mark.asyncio
 @patch(A + 'MongoHandler')
-@patch(A + 'AzureMessageClient')
+@patch('blocks_genesis._message.azure.azure_message_client.AzureMessageClient')
 @patch(A + 'RabbitMessageClient')
 async def test_close_lifespan_azure_runtimeerror_no_mongo(mock_rabbit, mock_azure, mock_mh):
     mock_rabbit.get_instance.return_value.close = AsyncMock()

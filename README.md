@@ -58,7 +58,7 @@ Key use cases:
 | Python 3.12+ | Declared in `pyproject.toml` (`requires-python = ">=3.12"`). |
 | Redis | Cache provider and tenant update pub/sub. |
 | MongoDB | Tenant lookup, application data, log and trace export. |
-| Azure Key Vault | Runtime secret source; required by the current secret loader. |
+| Secret source | `BlocksSecret__<FieldName>` environment variables, or Azure Key Vault (optional `azure` extra). |
 | Message broker | Azure Service Bus namespace or RabbitMQ instance, depending on configuration. |
 
 The backing services are needed at service startup (`configure_lifespan` / `WorkerConsoleApp`), not at import time.
@@ -304,7 +304,15 @@ load_configurations("config")  # loads config/<APP_ENV>.json, APP_ENV defaults t
 settings = get_configurations()
 ```
 
-### Secrets (Azure Key Vault)
+### Secrets
+
+The secret loader picks its source at startup, with the same rule as the .NET Genesis library: a valid `BLOCKS_VAULT_TYPE` (`Azure` or `OnPrem`, any case) wins; otherwise the source is Azure Key Vault when `KeyVault__KeyVaultUrl` is set, and environment variables when it is not.
+
+**Environment variables (on-premises).** Set one variable per field, named `BlocksSecret__<FieldName>`, for example `BlocksSecret__CacheConnectionString`. Names are matched without regard to case, and a value that is empty counts as not set. This needs no Azure package.
+
+**Azure Key Vault.** The Azure packages are an optional extra: `pip install "seliseblocks-genesis-os[azure]"` (or `uv add "seliseblocks-genesis-os[azure]"`). `AzureKeyVault` and `AzureMessageClient` load only when used.
+
+#### Azure Key Vault
 
 At startup, the secret loader fetches the fields of the `BlocksSecret` model from Azure Key Vault. Two things must be in place:
 
