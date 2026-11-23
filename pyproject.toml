@@ -57,6 +57,7 @@ dev = [
     "azure-identity>=1.7.0",
     "azure-keyvault-secrets>=4.3.0",
     "azure-servicebus>=7.14.2",
+    "hypothesis>=6.170.17",
 ]
 
 [project.urls]
