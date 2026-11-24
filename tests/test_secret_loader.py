@@ -3,10 +3,9 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from blocks_genesis._core import secret_loader
 
 @pytest.mark.asyncio
-@patch('blocks_genesis._core.azure_key_vault.AzureKeyVault')
+@patch('blocks_genesis._core.secret_loader.AzureKeyVault')
 @patch('blocks_genesis._core.secret_loader.BlocksSecret')
 async def test_load_secrets_and_get_blocks_secret(mock_blocks_secret, mock_vault, monkeypatch):
-    monkeypatch.setenv('BLOCKS_VAULT_TYPE', 'azure')
     # Reset module-level _loaded_secret
     secret_loader._loaded_secret = None
     mock_vault_instance = mock_vault.return_value
@@ -20,10 +19,9 @@ async def test_load_secrets_and_get_blocks_secret(mock_blocks_secret, mock_vault
     assert secret_loader.get_blocks_secret() is not None
 
 @pytest.mark.asyncio
-@patch('blocks_genesis._core.azure_key_vault.AzureKeyVault')
+@patch('blocks_genesis._core.secret_loader.AzureKeyVault')
 @patch('blocks_genesis._core.secret_loader.BlocksSecret')
-async def test_load_secrets_already_loaded(mock_blocks_secret, mock_vault, monkeypatch):
-    monkeypatch.setenv('BLOCKS_VAULT_TYPE', 'azure')
+async def test_load_secrets_already_loaded(mock_blocks_secret, mock_vault):
     secret_loader._loaded_secret = MagicMock()
     loader = secret_loader.SecretLoader('svc')
     await loader.load_secrets()
@@ -31,10 +29,9 @@ async def test_load_secrets_already_loaded(mock_blocks_secret, mock_vault, monke
     mock_vault.return_value.get_secrets.assert_not_called()
 
 @pytest.mark.asyncio
-@patch('blocks_genesis._core.azure_key_vault.AzureKeyVault')
+@patch('blocks_genesis._core.secret_loader.AzureKeyVault')
 @patch('blocks_genesis._core.secret_loader.BlocksSecret')
-async def test_load_secrets_error(mock_blocks_secret, mock_vault, monkeypatch):
-    monkeypatch.setenv('BLOCKS_VAULT_TYPE', 'azure')
+async def test_load_secrets_error(mock_blocks_secret, mock_vault):
     secret_loader._loaded_secret = None
     mock_vault_instance = mock_vault.return_value
     mock_vault_instance.get_secrets = AsyncMock(side_effect=Exception('fail'))
@@ -43,9 +40,8 @@ async def test_load_secrets_error(mock_blocks_secret, mock_vault, monkeypatch):
         await loader.load_secrets()
 
 @pytest.mark.asyncio
-@patch('blocks_genesis._core.azure_key_vault.AzureKeyVault')
-async def test_close(mock_vault, monkeypatch):
-    monkeypatch.setenv('BLOCKS_VAULT_TYPE', 'azure')
+@patch('blocks_genesis._core.secret_loader.AzureKeyVault')
+async def test_close(mock_vault):
     loader = secret_loader.SecretLoader('svc')
     mock_vault_instance = mock_vault.return_value
     mock_vault_instance.close = AsyncMock()

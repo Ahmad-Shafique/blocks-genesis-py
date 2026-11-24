@@ -14,9 +14,9 @@ from blocks_genesis._core.worker import WorkerConsoleApp
 @patch('blocks_genesis._core.worker.MongoDbContextProvider')
 @patch('blocks_genesis._core.worker.EventRegistry')
 @patch('blocks_genesis._core.worker.get_blocks_secret')
-@patch('blocks_genesis._message.azure.config_azure_service_bus.ConfigAzureServiceBus')
-@patch('blocks_genesis._message.azure.azure_message_client.AzureMessageClient')
-@patch('blocks_genesis._message.azure.azure_message_worker.AzureMessageWorker')
+@patch('blocks_genesis._core.worker.ConfigAzureServiceBus')
+@patch('blocks_genesis._core.worker.AzureMessageClient')
+@patch('blocks_genesis._core.worker.AzureMessageWorker')
 @patch('blocks_genesis._core.worker.MessageConfiguration')
 async def test_setup_services_and_cleanup(
     mock_msg_config, mock_worker, mock_client, mock_config, mock_get_secret, mock_event_registry,
@@ -52,9 +52,9 @@ async def test_setup_services_and_cleanup(
 @patch('blocks_genesis._core.worker.MongoDbContextProvider')
 @patch('blocks_genesis._core.worker.EventRegistry')
 @patch('blocks_genesis._core.worker.get_blocks_secret')
-@patch('blocks_genesis._message.azure.config_azure_service_bus.ConfigAzureServiceBus')
-@patch('blocks_genesis._message.azure.azure_message_client.AzureMessageClient')
-@patch('blocks_genesis._message.azure.azure_message_worker.AzureMessageWorker')
+@patch('blocks_genesis._core.worker.ConfigAzureServiceBus')
+@patch('blocks_genesis._core.worker.AzureMessageClient')
+@patch('blocks_genesis._core.worker.AzureMessageWorker')
 @patch('blocks_genesis._core.worker.MessageConfiguration')
 async def test_setup_services_event_registration_error(
     mock_msg_config, mock_worker, mock_client, mock_config, mock_get_secret, mock_event_registry,

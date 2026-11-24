@@ -13,7 +13,7 @@ from blocks_genesis._core import api
 @patch('blocks_genesis._core.api.initialize_tenant_service', new_callable=AsyncMock)
 @patch('blocks_genesis._core.api.DbContext')
 @patch('blocks_genesis._core.api.MongoDbContextProvider')
-@patch('blocks_genesis._message.azure.azure_message_client.AzureMessageClient')
+@patch('blocks_genesis._core.api.AzureMessageClient')
 @patch('blocks_genesis._core.api.MessageConfiguration')
 async def test_configure_lifespan(mock_msg_config, mock_client, mock_mongo, mock_db, mock_init_tenant, mock_redis, mock_cache, mock_tracing, mock_logger, mock_secret_loader, mock_rabbit):
     mock_secret_loader.return_value.load_secrets = AsyncMock()
@@ -22,7 +22,7 @@ async def test_configure_lifespan(mock_msg_config, mock_client, mock_mongo, mock
     mock_secret_loader.return_value.load_secrets.assert_awaited()
 
 @pytest.mark.asyncio
-@patch('blocks_genesis._message.azure.azure_message_client.AzureMessageClient')
+@patch('blocks_genesis._core.api.AzureMessageClient')
 @patch('blocks_genesis._core.api.MongoHandler')
 async def test_close_lifespan(mock_mongo, mock_client):
     mock_client.get_instance.return_value.close = AsyncMock()

@@ -5,7 +5,6 @@ from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 import os
-import sys
 from pathlib import Path
 from blocks_genesis._cache.cache_provider import CacheProvider
 from blocks_genesis._cache.redis_client import RedisClient
@@ -15,6 +14,7 @@ from blocks_genesis._database.mongo_context import MongoDbContextProvider
 from blocks_genesis._lmt.log_config import configure_logger
 from blocks_genesis._lmt.mongo_log_exporter import MongoHandler
 from blocks_genesis._lmt.tracing import configure_tracing
+from blocks_genesis._message.azure.azure_message_client import AzureMessageClient
 from blocks_genesis._message.rabbit_mq.rabbit_message_client import RabbitMessageClient
 from blocks_genesis._message.message_configuration import MessageConfiguration
 from blocks_genesis._middlewares.global_exception_middleware import GlobalExceptionHandlerMiddleware
@@ -61,8 +61,6 @@ async def configure_lifespan(name: str, message_config: MessageConfiguration):
         if message_config.rabbit_mq_configuration is not None:
             RabbitMessageClient.initialize(message_config)
         if message_config.azure_service_bus_configuration is not None:
-            # Imported here so the Azure Service Bus package is needed only when it is used.
-            from blocks_genesis._message.azure.azure_message_client import AzureMessageClient
             AzureMessageClient.initialize(message_config)
 
 def custom_generate_unique_id(route: APIRoute):
@@ -90,13 +88,10 @@ async def close_lifespan():
         await RabbitMessageClient.get_instance().close()
     except RuntimeError:
         pass
-    # The Azure client exists only if its module was imported, so closing never imports the Azure package.
-    azure_client_module = sys.modules.get("blocks_genesis._message.azure.azure_message_client")
-    if azure_client_module is not None:
-        try:
-            await azure_client_module.AzureMessageClient.get_instance().close()
-        except RuntimeError:
-            pass
+    try:
+        await AzureMessageClient.get_instance().close()
+    except RuntimeError:
+        pass
     # Shutdown logic
     if hasattr(MongoHandler, '_mongo_logger') and MongoHandler._mongo_logger:
         MongoHandler._mongo_logger.stop()

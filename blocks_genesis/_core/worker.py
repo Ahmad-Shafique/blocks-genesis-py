@@ -9,6 +9,9 @@ from blocks_genesis._cache.redis_client import RedisClient
 from blocks_genesis._core.secret_loader import SecretLoader, get_blocks_secret
 from blocks_genesis._database.db_context import DbContext
 from blocks_genesis._database.mongo_context import MongoDbContextProvider
+from blocks_genesis._message.azure.azure_message_client import AzureMessageClient
+from blocks_genesis._message.azure.azure_message_worker import AzureMessageWorker
+from blocks_genesis._message.azure.config_azure_service_bus import ConfigAzureServiceBus
 from blocks_genesis._message.rabbit_mq.rabbit_message_client import RabbitMessageClient
 from blocks_genesis._message.rabbit_mq.rabbit_message_worker import RabbitMessageWorker
 from blocks_genesis._message.event_registry import EventRegistry
@@ -94,11 +97,6 @@ class WorkerConsoleApp:
                 self.logger.info("RabbitMQ Message Worker initialized and ready")
 
             if self.message_config.azure_service_bus_configuration is not None:
-                # Imported here so the Azure Service Bus package is needed only when it is used.
-                from blocks_genesis._message.azure.azure_message_client import AzureMessageClient
-                from blocks_genesis._message.azure.azure_message_worker import AzureMessageWorker
-                from blocks_genesis._message.azure.config_azure_service_bus import ConfigAzureServiceBus
-
                 ConfigAzureServiceBus().configure_queue_and_topic(self.message_config)
                 AzureMessageClient.initialize(self.message_config)
                 self.message_worker = AzureMessageWorker(self.message_config)

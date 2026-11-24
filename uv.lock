@@ -1985,6 +1985,9 @@ source = { editable = "." }
 dependencies = [
     { name = "aio-pika" },
     { name = "aiohttp" },
+    { name = "azure-identity" },
+    { name = "azure-keyvault-secrets" },
+    { name = "azure-servicebus" },
     { name = "cors" },
     { name = "cryptography" },
     { name = "fastapi" },
@@ -2004,18 +2007,8 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
-[package.optional-dependencies]
-azure = [
-    { name = "azure-identity" },
-    { name = "azure-keyvault-secrets" },
-    { name = "azure-servicebus" },
-]
-
 [package.dev-dependencies]
 dev = [
-    { name = "azure-identity" },
-    { name = "azure-keyvault-secrets" },
-    { name = "azure-servicebus" },
     { name = "httpx" },
     { name = "hypothesis" },
     { name = "pytest" },
@@ -2028,9 +2021,9 @@ dev = [
 requires-dist = [
     { name = "aio-pika", specifier = ">=9.0.0" },
     { name = "aiohttp", specifier = ">=3.12.9" },
-    { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.7.0" },
-    { name = "azure-keyvault-secrets", marker = "extra == 'azure'", specifier = ">=4.3.0" },
-    { name = "azure-servicebus", marker = "extra == 'azure'", specifier = ">=7.14.2" },
+    { name = "azure-identity", specifier = ">=1.7.0" },
+    { name = "azure-keyvault-secrets", specifier = ">=4.3.0" },
+    { name = "azure-servicebus", specifier = ">=7.14.2" },
     { name = "cors", specifier = ">=1.0.1" },
     { name = "cryptography", specifier = ">=42.0.0" },
     { name = "fastapi", specifier = ">=0.68.0" },
@@ -2049,13 +2042,9 @@ requires-dist = [
     { name = "tzdata", specifier = ">=2024.1" },
     { name = "uvicorn", specifier = ">=0.15.0" },
 ]
-provides-extras = ["azure"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "azure-identity", specifier = ">=1.7.0" },
-    { name = "azure-keyvault-secrets", specifier = ">=4.3.0" },
-    { name = "azure-servicebus", specifier = ">=7.14.2" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "hypothesis", specifier = ">=6.170.17" },
     { name = "pytest", specifier = ">=8.4.1" },
