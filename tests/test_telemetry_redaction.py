@@ -341,6 +341,7 @@ def test_sanitize_dict_redacts_secret_shaped_values():
 def _middleware_request():
     request = MagicMock(spec=Request)
     request.url.path = "/api/x"
+    request.scope = {"path": "/api/x", "root_path": ""}
     request.headers = {"x-blocks-key": "key", "proxy-authorization": QUERY_SENTINEL}
     request.query_params = {"code": BODY_SENTINEL}
     request.base_url.hostname = "host"

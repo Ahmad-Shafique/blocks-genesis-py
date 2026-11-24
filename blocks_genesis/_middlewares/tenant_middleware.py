@@ -26,6 +26,17 @@ async def tee_body_iterator(
         yield chunk
 
 
+def _route_path(scope) -> str:
+    """The path below the ASGI root_path, cut only on a segment boundary (Starlette's get_route_path).
+
+    genesis-net matches on Request.Path, which excludes PathBase.
+    """
+    path = scope.get("path", "")
+    root = (scope.get("root_path") or "").rstrip("/")
+    if root and path.startswith(root) and (len(path) == len(root) or path[len(root)] == "/"):
+        return path[len(root):] or "/"
+    return path
+
 
 class TenantValidationMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, included_paths=None):
@@ -43,13 +54,15 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
 
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        # Only apply tenant validation if path matches or starts with any included prefix
+        # Only apply tenant validation if the path, as received or below the ASGI root_path,
+        # matches or starts with any included prefix. Checking both keeps every request the
+        # received path validates (e.g. root_path "/api" with path "/api/x") validated.
         # Example: included_paths=["/api", "/custom"]
         #   /api/foo  -> validated
         #   /custom/bar -> validated
         #   /public    -> not validated
-        if not any(path == p or path.startswith(p.rstrip("/ ") + "/") for p in self.included_paths):
+        paths = (request.url.path, _route_path(request.scope))
+        if not any(path == p or path.startswith(p.rstrip("/ ") + "/") for path in paths for p in self.included_paths):
             return await call_next(request)
 
         try:
@@ -166,12 +179,6 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
             request_size + response_size
         )
         Activity.set_current_property("usage", True)
-
-        if not (200 <= response.status_code < 300):
-            Activity.set_current_property(
-                StatusCode.ERROR,
-                f"HTTP {response.status_code}"
-            )
 
         sanitized_response_headers = sanitize_dict(dict(response.headers))
         Activity.set_current_properties({
