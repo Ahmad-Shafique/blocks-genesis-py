@@ -18,6 +18,7 @@ def _bl(batch_size=1):
     b._dropped = 0
     b._dropped_lock = threading.Lock()
     b._last_drop_report = float("-inf")
+    b._service_name = 'svc'
     return b
 
 
@@ -115,6 +116,7 @@ def test_enqueue():
     b = _bl(); b.queue = MagicMock()
     r = MagicMock(); r.levelname = 'INFO'; r.getMessage.return_value = 'm'
     r.TenantId = 'tid'; r.name = 'n'; r.TraceId = 't'; r.SpanId = 's'
+    r.exc_text = None; r.exc_info = None
     b.enqueue(r)
     b.queue.put_nowait.assert_called()
 
@@ -125,6 +127,7 @@ def test_enqueue_fallbacks():
         ma.get_trace_id.return_value = 'at'; ma.get_span_id.return_value = 'as'
         r = MagicMock(); r.levelname = 'INFO'; r.getMessage.return_value = 'm'
         r.TenantId = None; r.name = 'n'; r.TraceId = None; r.SpanId = None
+        r.exc_text = None; r.exc_info = None
         b.enqueue(r)
         b.queue.put_nowait.assert_called()
 

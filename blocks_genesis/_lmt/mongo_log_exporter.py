@@ -9,10 +9,24 @@ from pymongo import MongoClient, ASCENDING, DESCENDING, errors
 from blocks_genesis._auth.blocks_context import BlocksContextManager
 from blocks_genesis._core.secret_loader import get_blocks_secret
 from blocks_genesis._lmt.activity import Activity
+from blocks_genesis._lmt.redaction import redact_value
 
 RETENTION_SECONDS = 90 * 24 * 60 * 60
 LOG_QUEUE_MAX_SIZE = 10_000
 _NAMESPACE_EXISTS = 48
+_EXCEPTION_FORMATTER = logging.Formatter()
+
+
+def _exception_text(record: logging.LogRecord) -> str:
+    """The record's traceback as genesis-net stores Exception.ToString(); "" when there is none."""
+    try:
+        text = record.exc_text
+        if not text and record.exc_info and record.exc_info[0] is not None:
+            text = _EXCEPTION_FORMATTER.formatException(record.exc_info)
+        return redact_value(text) if text else ""
+    except Exception:
+        # A malformed exc_info costs this field only; the record is still queued.
+        return ""
 
 
 class MongoBatchLogger:
@@ -20,10 +34,11 @@ class MongoBatchLogger:
         self.batch_size = batch_size
         self.flush_interval_sec = flush_interval_sec
         self.blocks_secret = get_blocks_secret()
+        self._service_name = self.blocks_secret.ServiceName
         # Lazy initialization of MongoDB connection
         mongo_client = MongoClient(self.blocks_secret.LogConnectionString)
         db = mongo_client[self.blocks_secret.LogDatabaseName]
-        collection_name = self.blocks_secret.ServiceName
+        collection_name = self._service_name
 
         self._create_collection_for_logs(db, collection_name)
 
@@ -123,6 +138,8 @@ class MongoBatchLogger:
             "LoggerName": record.name,
             "TraceId": record.TraceId or Activity.get_trace_id(),
             "SpanId": record.SpanId or Activity.get_span_id(),
+            "Exception": _exception_text(record),
+            "ServiceName": self._service_name,
         }
         try:
             self.queue.put_nowait(doc)

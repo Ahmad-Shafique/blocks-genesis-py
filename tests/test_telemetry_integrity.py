@@ -65,6 +65,7 @@ def _bl(batch_size=1):
     b._dropped = 0
     b._dropped_lock = threading.Lock()
     b._last_drop_report = float("-inf")
+    b._service_name = "svc"
     return b
 
 
