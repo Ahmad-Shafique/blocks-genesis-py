@@ -108,9 +108,8 @@ def _trusted_proxy_hosts() -> Union[str, List[str]]:
         return hosts
     if not is_local_deployment():
         logger.warning(
-            "%s is unset or '*': X-Forwarded-For and X-Forwarded-Proto are trusted from any host. "
-            "Set it to the addresses of the proxies in front of this service.",
-            TRUSTED_PROXY_HOSTS_KEY,
+            "BLOCKS_TRUSTED_PROXY_HOSTS is unset or '*': X-Forwarded-For and X-Forwarded-Proto are trusted from any host. "
+            "Set it to the addresses of the proxies in front of this service."
         )
     return "*"
 
