@@ -2,11 +2,11 @@
 
 ## Supported Versions
 
-Only the latest release published to PyPI as [`seliseblocks-genesis`](https://pypi.org/project/seliseblocks-genesis/) receives security fixes.
+Only the latest release published to PyPI as [`seliseblocks-genesis-os`](https://pypi.org/project/seliseblocks-genesis-os/) receives security fixes.
 
 | Version | Supported |
 |---|---|
-| Latest release (currently 0.3.x) | Yes |
+| Latest release (currently 4.x) | Yes |
 | Older releases | No, please upgrade |
 
 ## Reporting a Vulnerability
