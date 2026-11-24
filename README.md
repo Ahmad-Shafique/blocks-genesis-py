@@ -390,9 +390,9 @@ Secret names resolved from the vault (the fields of `BlocksSecret`):
 | `LogConnectionString` | MongoDB connection string used by the log exporter. |
 | `MetricConnectionString` | Reserved metric exporter connection string. |
 | `TraceConnectionString` | MongoDB connection string used by the trace exporter. |
-| `LogDatabaseName` | MongoDB database name for logs. |
+| `LogDatabaseName` | MongoDB database name for logs. A missing service log collection is created as a time-series collection with a 90-day expiry and an index on `TenantId`. An existing one is used as is. |
 | `MetricDatabaseName` | Reserved metric database name. |
-| `TraceDatabaseName` | MongoDB database name for traces. A missing tenant trace collection is created as a time-series collection with a 90-day expiry; an existing plain one gets a 90-day TTL index on `Timestamp`. Both get an index on `TraceId`. |
+| `TraceDatabaseName` | MongoDB database name for traces. A missing tenant trace collection is created as a time-series collection with a 90-day expiry and an index on `TraceId`. An existing collection is used as is: genesis-py adds no index or expiry to it and never drops it. A span goes to the collection of its own `baggage.TenantId`; child spans inherit the parent span's `baggage.*` attributes when they start. |
 | `ServiceName` | Service identifier; overwritten at load time with the name passed to `configure_lifespan` or `WorkerConsoleApp`. |
 | `DatabaseConnectionString` | Root tenant metadata database connection string. |
 | `RootDatabaseName` | Root database containing tenant and authorization metadata. |
@@ -413,7 +413,7 @@ It registers these routes on the app:
 
 The API docs routes are off unless `show_docs=True`: with the default `show_docs=False`, FastAPI's own `openapi_url`, `docs_url`, `redoc_url` and Swagger OAuth2 redirect routes are removed as well, so every docs path answers 404.
 
-Tenant validation applies to requests whose path starts with one of the `included_paths` prefixes (default `/api`). The tenant is resolved from the `x-blocks-key` header, the `x-blocks-key` or `tenant_id` query parameter, or the request domain. Requests with an unknown or disabled tenant are rejected, as are requests whose `Origin`/`Referer` domain is not registered for the tenant. Both get the same 404, so the response does not reveal whether a tenant key exists. A `localhost` origin is accepted only when `is_local` is true. A request with neither header passes this check.
+Tenant validation applies to requests whose path, as received or below the ASGI root path, starts with one of the `included_paths` prefixes (default `/api`). The tenant is resolved from the `x-blocks-key` header, the `x-blocks-key` or `tenant_id` query parameter, or the request domain. Requests with an unknown or disabled tenant are rejected, as are requests whose `Origin`/`Referer` domain is not registered for the tenant. Both get the same 404, so the response does not reveal whether a tenant key exists. A `localhost` origin is accepted only when `is_local` is true. A request with neither header passes this check.
 
 CORS allows an origin when it is in `cors_origins` or `BLOCKS_CORS_ALLOWED_ORIGINS`, when it is an application domain of an enabled tenant, or when it is `localhost` and `is_local` is true. An allowed origin is echoed back, never `*`, with `Access-Control-Allow-Credentials: true` and `Vary: Origin`. Any other origin gets no CORS headers, and its preflight gets 400. Every response carries `Vary: Origin`. A tenant-domain decision is cached for 60 s when allowed and 10 s when refused, and at most 20 uncached lookups run per second per process; beyond that an unknown origin is refused. Preflight requests are answered before tenant validation, so they need no `x-blocks-key`.
 

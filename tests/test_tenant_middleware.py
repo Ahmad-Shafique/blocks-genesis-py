@@ -11,6 +11,7 @@ async def test_dispatch_excluded_paths(mock_ctx_mgr, mock_activity, mock_get_ten
     middleware = TenantValidationMiddleware(MagicMock())
     request = MagicMock(spec=Request)
     request.url.path = '/docs'
+    request.scope = {'path': '/docs', 'root_path': ''}
     call_next = AsyncMock(return_value='response')
     result = await middleware.dispatch(request, call_next)
     assert result == 'response'
@@ -24,6 +25,7 @@ async def test_dispatch_missing_tenant(mock_ctx_mgr, mock_activity, mock_get_ten
     mock_ctx_mgr.is_localhost_host.return_value = False
     request = MagicMock(spec=Request)
     request.url.path = '/not-excluded'
+    request.scope = {'path': '/not-excluded', 'root_path': ''}
     request.headers = {}
     request.query_params.get.return_value = None
     request.base_url.hostname = 'host'
@@ -41,6 +43,7 @@ async def test_dispatch_valid_tenant(mock_ctx_mgr, mock_activity, mock_get_tenan
     middleware = TenantValidationMiddleware(MagicMock())
     request = MagicMock(spec=Request)
     request.url.path = '/not-excluded'
+    request.scope = {'path': '/not-excluded', 'root_path': ''}
     request.headers.get.return_value = 'api-key'
     request.query_params.get.return_value = None
     tenant = MagicMock()
@@ -63,6 +66,7 @@ async def test_dispatch_invalid_origin(mock_ctx_mgr, mock_activity, mock_get_ten
     middleware = TenantValidationMiddleware(MagicMock(), included_paths=['/not-excluded'])
     request = MagicMock(spec=Request)
     request.url.path = '/not-excluded'
+    request.scope = {'path': '/not-excluded', 'root_path': ''}
     request.headers = {'x-blocks-key': 'api-key'}
     request.query_params.get.return_value = None
     tenant = MagicMock()
@@ -92,6 +96,7 @@ async def test_refused_origin_looks_like_an_unknown_tenant(mock_ctx_mgr, mock_ac
     def _request(key):
         request = MagicMock(spec=Request)
         request.url.path = '/api/x'
+        request.scope = {'path': '/api/x', 'root_path': ''}
         request.headers = {'x-blocks-key': key}
         request.query_params.get.return_value = None
         return request
