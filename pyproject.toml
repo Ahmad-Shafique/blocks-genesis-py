@@ -10,6 +10,8 @@ dependencies = [
     "fastapi>=0.68.0",
     "uvicorn>=0.15.0",
     "python-dotenv>=0.19.0",
+    "azure-identity>=1.7.0",
+    "azure-keyvault-secrets>=4.3.0",
     "redis>=4.0.0",
     "motor>=2.5.0",
     "structlog>=21.1.0",
@@ -23,21 +25,13 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.54b1",
     "opentelemetry-instrumentation-redis>=0.54b1",
     "aiohttp>=3.12.9",
+    "azure-servicebus>=7.14.2",
     "aio-pika>=9.0.0",
     "cors>=1.0.1",
     "tzdata>=2024.1",
 ]
 
 requires-python = ">=3.12"
-
-[project.optional-dependencies]
-# Needed only for Azure Key Vault and Azure Service Bus. Without it the package runs on
-# environment-variable secrets and RabbitMQ.
-azure = [
-    "azure-identity>=1.7.0",
-    "azure-keyvault-secrets>=4.3.0",
-    "azure-servicebus>=7.14.2",
-]
 
 [build-system]
 requires = ["hatchling"]
@@ -53,10 +47,6 @@ dev = [
     "pytest-cov>=5.0.0",
     "httpx>=0.27.0",
     "twine>=7",
-    # The test suite exercises the Azure code, so it needs what the "azure" extra installs.
-    "azure-identity>=1.7.0",
-    "azure-keyvault-secrets>=4.3.0",
-    "azure-servicebus>=7.14.2",
     "hypothesis>=6.170.17",
 ]
 
