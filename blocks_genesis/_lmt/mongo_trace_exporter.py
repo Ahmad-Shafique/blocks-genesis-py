@@ -147,37 +147,37 @@ class MongoDBTraceExporter(SpanExporter):
                 _logger.warning("Dropped %d trace documents for collection '%s' (%s)", len(docs), tenant_id, type(ex).__name__)
 
     def _ensure_collection(self, collection_name: str):
-        """Creates a missing trace collection as time-series; gives a plain one a TTL index. Both get the TraceId index."""
+        """Prepares only a trace collection this exporter creates: time-series with expiry, then the TraceId index.
+
+        An existing collection (time-series or plain, created by genesis-net, an older genesis-py or anyone) is used
+        as is: no index, no TTL, no drop. createIndexes waits for the build, and on a large collection that would
+        block this export thread for hours. genesis-net drops and recreates a plain collection; genesis-py never does.
+        """
         if collection_name in self._ensured_collections:
             return
         self._ensured_collections.add(collection_name)  # one attempt per collection per process
         try:
-            info = self._collection_info(collection_name)
-            if info is None:
-                info = self._create_time_series_collection(collection_name)
-            collection = self._db[collection_name]
-            if info.get("type") != "timeseries":
-                # A time-series collection expires on its own and refuses a TTL index.
-                collection.create_index([("Timestamp", ASCENDING)], name="Timestamp_TTL",
-                                        expireAfterSeconds=RETENTION_SECONDS)
-            collection.create_index([("TraceId", ASCENDING), ("Timestamp", DESCENDING)],
-                                    name=f"{collection_name}_Index")
+            if self._collection_info(collection_name) is None and self._create_time_series_collection(collection_name):
+                # Cheap: the collection was empty a moment ago.
+                self._db[collection_name].create_index([("TraceId", ASCENDING), ("Timestamp", DESCENDING)],
+                                                       name=f"{collection_name}_Index")
         except Exception as ex:
             _logger.warning("Could not prepare trace collection '%s' (%s)", collection_name, type(ex).__name__)
 
     def _collection_info(self, collection_name: str):
         return next(iter(self._db.list_collections(filter={"name": collection_name})), None)
 
-    def _create_time_series_collection(self, collection_name: str) -> dict:
+    def _create_time_series_collection(self, collection_name: str) -> bool:
+        """True only when this call created the collection."""
         try:
             self._db.create_collection(collection_name, timeseries=_TRACE_TIME_SERIES,
                                        expireAfterSeconds=RETENTION_SECONDS)
-            return {"type": "timeseries"}
+            return True
         except (CollectionInvalid, OperationFailure) as ex:
             if isinstance(ex, OperationFailure) and ex.code != _NAMESPACE_EXISTS:
                 raise
-            # Someone else created it first; index it according to what they made.
-            return self._collection_info(collection_name) or {}
+            # Someone else created it first; use it as is.
+            return False
 
     def _flush_remaining(self):
         buffer_by_tenant = {}

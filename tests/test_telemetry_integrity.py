@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 from opentelemetry.sdk.trace.export import SpanExportResult
-from pymongo.errors import BulkWriteError, CollectionInvalid, OperationFailure
+from pymongo.errors import BulkWriteError, OperationFailure
 
 from blocks_genesis._lmt import log_config, mongo_log_exporter, mongo_trace_exporter
 from blocks_genesis._lmt.activity import Activity
@@ -23,7 +23,6 @@ ML = "blocks_genesis._lmt.mongo_log_exporter."
 LC = "blocks_genesis._lmt.log_config."
 AC = "blocks_genesis._lmt.activity."
 
-TTL_INDEX = call([("Timestamp", 1)], name="Timestamp_TTL", expireAfterSeconds=7776000)
 TRACE_ID_INDEX = call([("TraceId", 1), ("Timestamp", -1)], name="tid_Index")
 
 
@@ -223,74 +222,6 @@ def test_missing_collection_is_created_as_time_series_once(capsys):
     assert coll.create_index.call_args_list == [TRACE_ID_INDEX]
     assert order == ["create", "insert", "insert"]
     assert mongo_trace_exporter.RETENTION_SECONDS is mongo_log_exporter.RETENTION_SECONDS
-    assert capsys.readouterr().out == ""
-
-
-def test_existing_plain_collection_gets_ttl_and_trace_id_indexes_once(capsys):
-    e = _exp()
-    coll = MagicMock()
-    e._db.__getitem__.return_value = coll
-    e._db.list_collections.return_value = [{"name": "tid", "type": "collection"}]
-
-    _flush_twice(e)
-
-    e._db.create_collection.assert_not_called()
-    assert coll.create_index.call_args_list == [TTL_INDEX, TRACE_ID_INDEX]
-    assert coll.insert_many.call_count == 2
-    assert capsys.readouterr().out == ""
-
-
-def test_existing_time_series_collection_gets_no_ttl_index(capsys):
-    e = _exp()
-    coll = MagicMock()
-    e._db.__getitem__.return_value = coll
-    e._db.list_collections.return_value = [{"name": "tid", "type": "timeseries"}]
-
-    _flush_twice(e)
-
-    e._db.create_collection.assert_not_called()
-    assert all("expireAfterSeconds" not in c.kwargs for c in coll.create_index.call_args_list)
-    assert coll.create_index.call_args_list == [TRACE_ID_INDEX]
-    assert capsys.readouterr().out == ""
-
-
-@pytest.mark.parametrize(
-    "race, existing, indexes",
-    [
-        (CollectionInvalid("collection tid already exists"), "timeseries", [TRACE_ID_INDEX]),
-        (OperationFailure("Collection already exists", code=48), "collection", [TTL_INDEX, TRACE_ID_INDEX]),
-    ],
-)
-def test_collection_created_by_someone_else_first_counts_as_success(race, existing, indexes, caplog, capsys):
-    e = _exp()
-    coll = MagicMock()
-    e._db.__getitem__.return_value = coll
-    e._db.list_collections.side_effect = [[], [{"name": "tid", "type": existing}]]
-    e._db.create_collection.side_effect = race
-
-    e._flush_to_mongo({"tid": [{}]})
-
-    assert coll.create_index.call_args_list == indexes
-    coll.insert_many.assert_called_once()
-    assert _warnings(caplog) == []
-    assert capsys.readouterr().out == ""
-
-
-def test_index_failure_is_logged_and_export_continues(caplog, capsys):
-    e = _exp()
-    coll = MagicMock()
-    e._db.__getitem__.return_value = coll
-    e._db.list_collections.return_value = [{"name": "tid", "type": "collection"}]
-    coll.create_index.side_effect = OperationFailure(SECRET)
-
-    e._flush_to_mongo({"tid": [{}]})
-    calls = coll.create_index.call_count
-    e._flush_to_mongo({"tid": [{}]})
-
-    assert coll.insert_many.call_count == 2
-    assert coll.create_index.call_count == calls
-    assert any("OperationFailure" in m and "tid" in m for m in _warnings(caplog))
-    assert "sentinel-pw" not in caplog.text
     assert capsys.readouterr().out == ""
 
 

@@ -12,11 +12,6 @@ TIME_SERIES = call(
     timeseries={"timeField": "Timestamp", "metaField": "TenantId", "granularity": "minutes"},
     expireAfterSeconds=RETENTION_SECONDS,
 )
-TTL_INDEX = call([("Timestamp", 1)], name="Timestamp_TTL", expireAfterSeconds=RETENTION_SECONDS)
-PLAIN_WARNING = (
-    "[MongoBatchLogger] log collection is a plain collection, not time-series: "
-    "kept with a TTL index; migrate it to time-series\n"
-)
 
 
 def _logger():
@@ -36,18 +31,6 @@ def _db(names, kind=None):
 
 def _ttl_calls(coll):
     return [c for c in coll.create_index.call_args_list if "expireAfterSeconds" in c.kwargs]
-
-
-def test_existing_plain_collection_is_kept_with_a_ttl_index(capsys):
-    db, coll = _db(["svc"], "collection")
-
-    _logger()._create_collection_for_logs(db, "svc")
-
-    db.drop_collection.assert_not_called()
-    coll.drop.assert_not_called()
-    db.create_collection.assert_not_called()
-    assert _ttl_calls(coll) == [TTL_INDEX]
-    assert capsys.readouterr() == ("", PLAIN_WARNING)
 
 
 def test_missing_collection_is_created_as_time_series(capsys):
@@ -97,41 +80,3 @@ def test_other_create_failure_stays_non_fatal(capsys):
     out, err = capsys.readouterr()
     assert out == ""
     assert err == "[MongoBatchLogger] log collection setup failed (OperationFailure)\n"
-
-
-COMPOUND_INDEX = call(
-    [("TenantId", 1), ("Timestamp", -1)],
-    name="svc_Index",
-    partialFilterExpression={"TenantId": {"$exists": True}},
-)
-
-
-def test_plain_collection_gets_the_ttl_and_the_tenant_index(capsys):
-    db, coll = _db(["svc"], "collection")
-
-    _logger()._create_collection_for_logs(db, "svc")
-
-    assert coll.create_index.call_args_list == [TTL_INDEX, COMPOUND_INDEX]
-    assert capsys.readouterr() == ("", PLAIN_WARNING)
-
-
-def test_ttl_index_failure_still_creates_the_tenant_index(capsys):
-    db, coll = _db(["svc"], "collection")
-    failures = iter([OperationFailure("mongodb://user:sentinel-pw@db.internal", code=85)])
-
-    def create_index(*args, **kwargs):
-        if "expireAfterSeconds" in kwargs:
-            raise next(failures)
-
-    coll.create_index.side_effect = create_index
-
-    _logger()._create_collection_for_logs(db, "svc")
-
-    assert coll.create_index.call_args_list == [TTL_INDEX, COMPOUND_INDEX]
-    db.drop_collection.assert_not_called()
-    coll.drop.assert_not_called()
-    assert capsys.readouterr() == (
-        "",
-        "[MongoBatchLogger] log collection is a plain collection, not time-series: "
-        "kept without a TTL index (OperationFailure); migrate it to time-series\n",
-    )
