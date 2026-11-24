@@ -2,7 +2,7 @@
 
 > Reusable FastAPI building blocks for multi-tenant services: tenant resolution, auth context, Redis cache, MongoDB access, Azure Service Bus / RabbitMQ messaging, and OpenTelemetry-based observability.
 
-![PyPI](https://img.shields.io/pypi/v/seliseblocks-genesis)
+![PyPI](https://img.shields.io/pypi/v/seliseblocks-genesis-os)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -27,7 +27,7 @@
 
 ## Overview
 
-`seliseblocks-genesis` is the shared Python foundation of the SELISE Blocks platform. It bootstraps production FastAPI services and background workers with consistent infrastructure wiring: secret loading from Azure Key Vault, tenant-aware request context, JWT authorization dependencies, Redis cache and MongoDB providers, message bus clients for Azure Service Bus and RabbitMQ, and OpenTelemetry tracing with MongoDB log/trace exporters.
+`seliseblocks-genesis-os` is the shared Python foundation of the SELISE Blocks platform. It bootstraps production FastAPI services and background workers with consistent infrastructure wiring: secret loading from Azure Key Vault, tenant-aware request context, JWT authorization dependencies, Redis cache and MongoDB providers, message bus clients for Azure Service Bus and RabbitMQ, and OpenTelemetry tracing with MongoDB log/trace exporters.
 
 It is consumed by the SELISE Blocks service repositories, so its exported names and signatures form a stable contract. See [Versioning and Compatibility](#versioning-and-compatibility).
 
@@ -68,13 +68,13 @@ The backing services are needed at service startup (`configure_lifespan` / `Work
 From PyPI:
 
 ```bash
-pip install seliseblocks-genesis
+pip install seliseblocks-genesis-os
 ```
 
 With uv:
 
 ```bash
-uv add seliseblocks-genesis
+uv add seliseblocks-genesis-os
 ```
 
 From source:
@@ -431,9 +431,9 @@ Starting the samples requires the backing services from [Requirements](#requirem
 
 ## Versioning and Compatibility
 
-- The package is versioned in `pyproject.toml` and published to PyPI as [`seliseblocks-genesis`](https://pypi.org/project/seliseblocks-genesis/).
+- The package is published to PyPI as [`seliseblocks-genesis-os`](https://pypi.org/project/seliseblocks-genesis-os/), version `4.<minor>.<patch>`, assigned automatically on each merge to `main`. The minor is not a compatibility signal, so pin an exact version.
 - The public API is the set of names exported from the top-level `blocks_genesis` package (its `__all__`). This package is consumed by the SELISE Blocks service repositories, so any change to an exported name, signature, type, or default value is treated as a breaking change and is coordinated across consumers.
-- While the version is below 1.0.0, consumers should pin an exact version; minor releases may still contain breaking changes.
+- Moving from `seliseblocks-genesis` 0.3.x: replace that dependency with `seliseblocks-genesis-os`, do not add it next to it (both install the same `blocks_genesis` package and would overwrite each other). Imports stay `blocks_genesis`. Use 4.0.1 or later: 4.0.0 on PyPI predates 0.3.8.
 - Python 3.12 or newer is required.
 
 ## Testing

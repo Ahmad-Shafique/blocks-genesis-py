@@ -100,11 +100,13 @@ Work lands on `inception`, and pull requests are opened from `inception` into `m
 
 ## Releasing
 
-Every service installs this package from PyPI, so a release must carry everything already on `main`.
+Every service installs this package from PyPI. A release happens only when `main` moves.
 
-- Tag only a commit that contains `main` (`git merge-base --is-ancestor origin/main <commit>` succeeds).
-- Name the tag `v<version>`, matching `version` in `pyproject.toml`.
-- Publish only by creating a GitHub release from that tag. `.github/workflows/release.yml` builds and uploads it, and refuses a tag that lacks `main` or does not match the package version. Do not upload by hand.
+- A push to `main` (the promotion of `stg` into `main`) runs `.github/workflows/main.yml`.
+- `main.yml` takes the major from `version` in `pyproject.toml` and picks the next free `<major>.<minor>.<patch>` on PyPI: the patch goes from 0 to 9, then the next minor starts.
+- It builds the package, publishes it through PyPI Trusted Publishing and tags the commit `v<version>`.
+- Nobody creates a GitHub release or uploads to PyPI by hand.
+- The major changes only through a deliberate commit to `version` in `pyproject.toml`.
 
 ## Git Guidelines
 

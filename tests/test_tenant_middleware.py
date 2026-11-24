@@ -112,6 +112,31 @@ async def test_refused_origin_looks_like_an_unknown_tenant(mock_ctx_mgr, mock_ac
     assert (refused.status_code, refused.body) == (unknown.status_code, unknown.body)
     assert any(r.levelname == 'DEBUG' and 'origin' in r.getMessage().lower() for r in caplog.records)
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('headers, query, expected', [
+    ({'x-blocks-key': 'from-header'}, {'x-blocks-key': 'from-query', 'tenant_id': 'from-tenant-id'}, 'from-header'),
+    ({}, {'x-blocks-key': 'from-query', 'tenant_id': 'from-tenant-id'}, 'from-query'),
+    ({}, {'tenant_id': 'from-tenant-id'}, 'from-tenant-id'),
+])
+@patch('blocks_genesis._middlewares.tenant_middleware.get_tenant_service')
+async def test_the_tenant_key_comes_from_the_header_then_the_query_key_then_tenant_id(
+    mock_get_tenant_service, headers, query, expected
+):
+    middleware = TenantValidationMiddleware(MagicMock())
+    middleware._is_valid_origin_or_referer = MagicMock(return_value=True)
+    request = MagicMock(spec=Request)
+    request.headers = headers
+    request.query_params = query
+    tenant = MagicMock(is_disabled=False)
+    tenant_service = mock_get_tenant_service.return_value
+    tenant_service.get_tenant = AsyncMock(return_value=tenant)
+    tenant_service.get_tenant_by_domain = AsyncMock()
+
+    assert await middleware._resolve_tenant_or_reject(request) is tenant
+
+    tenant_service.get_tenant.assert_awaited_once_with(expected)
+    tenant_service.get_tenant_by_domain.assert_not_awaited()
+
 def test_reject():
     middleware = TenantValidationMiddleware(MagicMock())
     resp = middleware._reject(400, 'msg')

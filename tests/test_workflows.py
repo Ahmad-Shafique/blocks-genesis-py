@@ -34,7 +34,7 @@ def uses_lines():
 
 def test_every_workflow_file_is_found():
     names = {path.name for path in YAML_FILES}
-    assert {"release.yml", "2_sonar.yml", "dev.yml", "repo-hygiene.yml", "security.yml"} <= names
+    assert {"main.yml", "2_sonar.yml", "dev.yml", "repo-hygiene.yml", "security.yml"} <= names
 
 
 @pytest.mark.parametrize("where, ref", list(uses_lines()))
@@ -54,16 +54,28 @@ def test_the_unused_install_action_is_gone():
 
 
 def test_the_release_build_checks_the_lock_before_building():
-    build = job(read("release.yml"), "build")
-    assert "uv lock --check" in build
-    assert build.index("run: uv lock --check") < build.index("run: uv build")
+    release = job(read("main.yml"), "release-job")
+    assert release.index("run: uv lock --check") \
+        < release.index("name: Stamp version into pyproject.toml") \
+        < release.index("run: uv build")
 
 
-def test_the_publish_job_runs_in_the_pypi_environment():
-    publish = job(read("release.yml"), "publish-to-pypi")
-    assert re.search(r"\n    environment: pypi\n", publish)
-    assert "id-token: write" in publish
-    assert "release/v1" not in publish
+def test_main_publishes_only_on_a_push_with_trusted_publishing():
+    release = job(read("main.yml"), "release-job")
+    assert "if: ${{ github.event_name == 'push' }}" in release
+    assert "needs: [sonarqube-job]" in release
+    assert "id-token: write" in release
+    assert "release/v1" not in release
+    assert "pypa/gh-action-pypi-publish@" in release
+
+
+def test_main_runs_on_pull_requests_and_pushes_to_main_only():
+    main = read("main.yml")
+    triggers = main[main.index("\non:\n"):main.index("\npermissions:")]
+    assert "\n  pull_request:\n    branches:\n      - main\n" in triggers
+    assert "\n  push:\n    branches:\n      - main\n" in triggers
+    assert "dev" not in triggers
+    assert "stg" not in triggers
 
 
 def test_sonar_installs_from_the_lock_and_a_failing_test_fails_the_job():

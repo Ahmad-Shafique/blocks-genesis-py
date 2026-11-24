@@ -129,10 +129,10 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
         or disabled, or the origin/referer is not allowed. The last two get the
         same 404, so a caller cannot tell whether a key exists.
         """
-        api_key = request.headers.get("x-blocks-key") or request.query_params.get("x-blocks-key") or request.query_params.get("tenant_id")
+        tenant_key = request.headers.get("x-blocks-key") or request.query_params.get("x-blocks-key") or request.query_params.get("tenant_id")
         tenant_service = get_tenant_service()
 
-        if not api_key:
+        if not tenant_key:
             request_host = request.base_url.hostname or ""
             if BlocksContextManager.is_localhost_host(request_host):
                 return self._reject(400, "BadRequest: Missing_Tenant_Key_Or_Id")
@@ -141,7 +141,7 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
             if not tenant:
                 return self._reject(404, "Not_Found: Application_Not_Found")
         else:
-            tenant = await tenant_service.get_tenant(api_key)
+            tenant = await tenant_service.get_tenant(tenant_key)
 
         if not tenant or tenant.is_disabled:
             return self._reject(404, "Not_Found: Application_Not_Found")

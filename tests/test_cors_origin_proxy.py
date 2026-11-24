@@ -502,6 +502,14 @@ def test_proxy_default_trusts_all_and_warns_outside_local(caplog):
     assert len(_proxy_warnings(caplog)) == 1
 
 
+def test_the_proxy_warning_is_constant_text_naming_the_setting(caplog):
+    with caplog.at_level(logging.WARNING):
+        _app()
+    [record] = _proxy_warnings(caplog)
+    assert api.TRUSTED_PROXY_HOSTS_KEY in record.msg
+    assert not record.args
+
+
 def test_proxy_default_no_warning_in_local_mode(monkeypatch, caplog):
     monkeypatch.setattr(CFG, {"is_local": True})
     with caplog.at_level(logging.WARNING):
