@@ -392,7 +392,7 @@ Secret names resolved from the vault (the fields of `BlocksSecret`):
 | `TraceConnectionString` | MongoDB connection string used by the trace exporter. |
 | `LogDatabaseName` | MongoDB database name for logs. |
 | `MetricDatabaseName` | Reserved metric database name. |
-| `TraceDatabaseName` | MongoDB database name for traces. A missing tenant trace collection is created as a time-series collection with a 90-day expiry; an existing plain one gets a 90-day TTL index on `Timestamp`. Both get an index on `TraceId`. |
+| `TraceDatabaseName` | MongoDB database name for traces. A missing tenant trace collection is created as a time-series collection with a 90-day expiry; an existing plain one gets a 90-day TTL index on `Timestamp`. Both get an index on `TraceId`. A span goes to the collection of its own `baggage.TenantId`; child spans inherit the parent span's `baggage.*` attributes when they start. |
 | `ServiceName` | Service identifier; overwritten at load time with the name passed to `configure_lifespan` or `WorkerConsoleApp`. |
 | `DatabaseConnectionString` | Root tenant metadata database connection string. |
 | `RootDatabaseName` | Root database containing tenant and authorization metadata. |
