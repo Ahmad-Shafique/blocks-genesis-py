@@ -76,14 +76,18 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
+
+      # uv build has no --locked flag, so refuse a uv.lock that no longer matches pyproject.toml first.
+      - name: Refuse a stale lock file
+        run: uv lock --check
 
       # Same scheme as blocks-genesis-net / blocks-genesis-react: the MAJOR is
       # declared in pyproject.toml and only ever changes by a deliberate commit;
@@ -148,7 +152,7 @@ jobs:
       # see the note on release-job above for why that requires this job to
       # run inline rather than via a reusable workflow.
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
 
       - name: Tag the release
         run: |
