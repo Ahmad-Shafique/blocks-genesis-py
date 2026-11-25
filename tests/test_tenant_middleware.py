@@ -11,6 +11,7 @@ async def test_dispatch_excluded_paths(mock_ctx_mgr, mock_activity, mock_get_ten
     middleware = TenantValidationMiddleware(MagicMock())
     request = MagicMock(spec=Request)
     request.url.path = '/docs'
+    request.scope = {'path': '/docs', 'root_path': ''}
     call_next = AsyncMock(return_value='response')
     result = await middleware.dispatch(request, call_next)
     assert result == 'response'
@@ -24,6 +25,7 @@ async def test_dispatch_missing_tenant(mock_ctx_mgr, mock_activity, mock_get_ten
     mock_ctx_mgr.is_localhost_host.return_value = False
     request = MagicMock(spec=Request)
     request.url.path = '/not-excluded'
+    request.scope = {'path': '/not-excluded', 'root_path': ''}
     request.headers = {}
     request.query_params.get.return_value = None
     request.base_url.hostname = 'host'
@@ -41,6 +43,7 @@ async def test_dispatch_valid_tenant(mock_ctx_mgr, mock_activity, mock_get_tenan
     middleware = TenantValidationMiddleware(MagicMock())
     request = MagicMock(spec=Request)
     request.url.path = '/not-excluded'
+    request.scope = {'path': '/not-excluded', 'root_path': ''}
     request.headers.get.return_value = 'api-key'
     request.query_params.get.return_value = None
     tenant = MagicMock()
@@ -63,6 +66,7 @@ async def test_dispatch_invalid_origin(mock_ctx_mgr, mock_activity, mock_get_ten
     middleware = TenantValidationMiddleware(MagicMock(), included_paths=['/not-excluded'])
     request = MagicMock(spec=Request)
     request.url.path = '/not-excluded'
+    request.scope = {'path': '/not-excluded', 'root_path': ''}
     request.headers = {'x-blocks-key': 'api-key'}
     request.query_params.get.return_value = None
     tenant = MagicMock()
@@ -77,7 +81,61 @@ async def test_dispatch_invalid_origin(mock_ctx_mgr, mock_activity, mock_get_ten
     middleware._is_valid_origin_or_referer = MagicMock(return_value=False)
     call_next = AsyncMock()
     result = await middleware.dispatch(request, call_next)
-    assert result.status_code == 406
+    # The same answer as an unknown tenant, so the response does not reveal that the key exists.
+    assert result.status_code == 404
+    call_next.assert_not_awaited()
+
+@pytest.mark.asyncio
+@patch('blocks_genesis._middlewares.tenant_middleware.get_tenant_service')
+@patch('blocks_genesis._middlewares.tenant_middleware.Activity')
+@patch('blocks_genesis._middlewares.tenant_middleware.BlocksContextManager')
+async def test_refused_origin_looks_like_an_unknown_tenant(mock_ctx_mgr, mock_activity, mock_get_tenant_service, caplog):
+    middleware = TenantValidationMiddleware(MagicMock(), included_paths=['/api'])
+    middleware._is_valid_origin_or_referer = MagicMock(return_value=False)
+
+    def _request(key):
+        request = MagicMock(spec=Request)
+        request.url.path = '/api/x'
+        request.scope = {'path': '/api/x', 'root_path': ''}
+        request.headers = {'x-blocks-key': key}
+        request.query_params.get.return_value = None
+        return request
+
+    tenant = MagicMock(is_disabled=False, tenant_id='tid')
+    tenant_service = mock_get_tenant_service.return_value
+    tenant_service.get_tenant = AsyncMock(side_effect=lambda key: tenant if key == 'known' else None)
+
+    with caplog.at_level('DEBUG', logger='blocks_genesis._middlewares.tenant_middleware'):
+        refused = await middleware.dispatch(_request('known'), AsyncMock())
+    unknown = await middleware.dispatch(_request('unknown'), AsyncMock())
+
+    assert (refused.status_code, refused.body) == (unknown.status_code, unknown.body)
+    assert any(r.levelname == 'DEBUG' and 'origin' in r.getMessage().lower() for r in caplog.records)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('headers, query, expected', [
+    ({'x-blocks-key': 'from-header'}, {'x-blocks-key': 'from-query', 'tenant_id': 'from-tenant-id'}, 'from-header'),
+    ({}, {'x-blocks-key': 'from-query', 'tenant_id': 'from-tenant-id'}, 'from-query'),
+    ({}, {'tenant_id': 'from-tenant-id'}, 'from-tenant-id'),
+])
+@patch('blocks_genesis._middlewares.tenant_middleware.get_tenant_service')
+async def test_the_tenant_key_comes_from_the_header_then_the_query_key_then_tenant_id(
+    mock_get_tenant_service, headers, query, expected
+):
+    middleware = TenantValidationMiddleware(MagicMock())
+    middleware._is_valid_origin_or_referer = MagicMock(return_value=True)
+    request = MagicMock(spec=Request)
+    request.headers = headers
+    request.query_params = query
+    tenant = MagicMock(is_disabled=False)
+    tenant_service = mock_get_tenant_service.return_value
+    tenant_service.get_tenant = AsyncMock(return_value=tenant)
+    tenant_service.get_tenant_by_domain = AsyncMock()
+
+    assert await middleware._resolve_tenant_or_reject(request) is tenant
+
+    tenant_service.get_tenant.assert_awaited_once_with(expected)
+    tenant_service.get_tenant_by_domain.assert_not_awaited()
 
 def test_reject():
     middleware = TenantValidationMiddleware(MagicMock())

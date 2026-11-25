@@ -1,12 +1,32 @@
 import logging
+import sys
 import threading
-from datetime import datetime
-from queue import Queue, Empty
-from pymongo import MongoClient, ASCENDING, DESCENDING
+import time
+from datetime import datetime, timezone
+from queue import Queue, Empty, Full
+from pymongo import MongoClient, ASCENDING, DESCENDING, errors
 
 from blocks_genesis._auth.blocks_context import BlocksContextManager
 from blocks_genesis._core.secret_loader import get_blocks_secret
 from blocks_genesis._lmt.activity import Activity
+from blocks_genesis._lmt.redaction import redact_value
+
+RETENTION_SECONDS = 90 * 24 * 60 * 60
+LOG_QUEUE_MAX_SIZE = 10_000
+_NAMESPACE_EXISTS = 48
+_EXCEPTION_FORMATTER = logging.Formatter()
+
+
+def _exception_text(record: logging.LogRecord) -> str:
+    """The record's traceback as genesis-net stores Exception.ToString(); "" when there is none."""
+    try:
+        text = record.exc_text
+        if not text and record.exc_info and record.exc_info[0] is not None:
+            text = _EXCEPTION_FORMATTER.formatException(record.exc_info)
+        return redact_value(text) if text else ""
+    except Exception:
+        # A malformed exc_info costs this field only; the record is still queued.
+        return ""
 
 
 class MongoBatchLogger:
@@ -14,30 +34,47 @@ class MongoBatchLogger:
         self.batch_size = batch_size
         self.flush_interval_sec = flush_interval_sec
         self.blocks_secret = get_blocks_secret()
+        self._service_name = self.blocks_secret.ServiceName
         # Lazy initialization of MongoDB connection
         mongo_client = MongoClient(self.blocks_secret.LogConnectionString)
         db = mongo_client[self.blocks_secret.LogDatabaseName]
-        collection_name = self.blocks_secret.ServiceName
+        collection_name = self._service_name
 
         self._create_collection_for_logs(db, collection_name)
 
         self.collection = db[collection_name]
-        self.queue = Queue()
+        self.queue = Queue(maxsize=LOG_QUEUE_MAX_SIZE)
+        self._dropped = 0
+        self._dropped_lock = threading.Lock()
+        self._last_drop_report = float("-inf")
         self._stop_event = threading.Event()
         self.worker_thread = threading.Thread(target=self._background_worker, daemon=True)
         self.worker_thread.start()
 
     def _create_collection_for_logs(self, db, collection_name: str):
         try:
-            self._create_collection_if_not_exists(db, collection_name)
-            self._create_index_if_needed(db, collection_name)
+            if self._create_collection_if_not_exists(db, collection_name):
+                self._create_index_if_needed(db, collection_name)
         except Exception as ex:
             # Keep startup resilient; logger handler should not crash app bootstrap.
-            print(ex)
+            # Type name only: the message can carry the connection string host.
+            sys.stderr.write(f"[MongoBatchLogger] log collection setup failed ({type(ex).__name__})\n")
 
-    def _create_collection_if_not_exists(self, db, collection_name: str):
-        collection_exists = self._collection_exists(db, collection_name)
-        if not collection_exists:
+    def _create_collection_if_not_exists(self, db, collection_name: str) -> bool:
+        """Creates a missing log collection as time-series; True only when this call created it.
+
+        An existing collection (time-series or plain, created by genesis-net, an older genesis-py or anyone) is used
+        as is: no index, no TTL, no drop. An index build on a large collection would block startup for hours.
+        genesis-net drops and recreates a plain collection; genesis-py never does, so log history is kept.
+        """
+        if self._collection_exists(db, collection_name):
+            if not self._is_time_series_collection(db, collection_name):
+                sys.stderr.write(
+                    "[MongoBatchLogger] log collection is a plain collection, not time-series: "
+                    "used as is, without expiry; migrate it to time-series\n"
+                )
+            return False
+        try:
             db.create_collection(
                 collection_name,
                 timeseries={
@@ -45,21 +82,13 @@ class MongoBatchLogger:
                     "metaField": "TenantId",
                     "granularity": "minutes",
                 },
-                expireAfterSeconds=90 * 24 * 60 * 60,
+                expireAfterSeconds=RETENTION_SECONDS,
             )
-            return
-
-        if not self._is_time_series_collection(db, collection_name):
-            db.drop_collection(collection_name)
-            db.create_collection(
-                collection_name,
-                timeseries={
-                    "timeField": "Timestamp",
-                    "metaField": "TenantId",
-                    "granularity": "minutes",
-                },
-                expireAfterSeconds=90 * 24 * 60 * 60,
-            )
+            return True
+        except (errors.CollectionInvalid, errors.OperationFailure) as ex:
+            if isinstance(ex, errors.OperationFailure) and ex.code != _NAMESPACE_EXISTS:
+                raise
+            return False  # someone else created it first; use it as is
 
     def _collection_exists(self, db, collection_name: str) -> bool:
         collections = db.list_collection_names(filter={"name": collection_name})
@@ -98,38 +127,69 @@ class MongoBatchLogger:
 
     def enqueue(self, record: logging.LogRecord):
         doc = {
-            "Timestamp": datetime.now(),
+            "Timestamp": datetime.now(timezone.utc),
             "Level": record.levelname,
             "Message": record.getMessage(),
             "TenantId": record.TenantId or "miscellaneous",
             "LoggerName": record.name,
             "TraceId": record.TraceId or Activity.get_trace_id(),
             "SpanId": record.SpanId or Activity.get_span_id(),
+            "Exception": _exception_text(record),
+            "ServiceName": self._service_name,
         }
-        self.queue.put(doc)
+        try:
+            self.queue.put_nowait(doc)
+        except Full:
+            # Drop the newest record rather than block the thread that logged it.
+            with self._dropped_lock:
+                self._dropped += 1
 
     def _background_worker(self):
-        batch = []
+        # A batch is written when full, when its oldest record has waited flush_interval_sec, or on stop.
+        batch, started = [], 0.0
         while not self._stop_event.is_set():
+            timeout = self.flush_interval_sec if not batch else max(0.0, started + self.flush_interval_sec - time.monotonic())
             try:
-                doc = self.queue.get(timeout=self.flush_interval_sec)
+                doc = self.queue.get(timeout=timeout)
+                if not batch:
+                    started = time.monotonic()
                 batch.append(doc)
             except Empty:
                 pass
 
-            if batch and (len(batch) >= self.batch_size or self._stop_event.is_set()):
-                try:
-                    self.collection.insert_many(batch)
-                except Exception as e:
-                    print(f"[MongoBatchLogger] Insert error: {e}")
-                batch.clear()
+            if batch and (len(batch) >= self.batch_size
+                          or time.monotonic() - started >= self.flush_interval_sec
+                          or self._stop_event.is_set()):
+                self._insert_batch(batch)
+                batch = []
+            self._report_dropped()
 
         # flush remaining logs on shutdown
         if batch:
+            self._insert_batch(batch)
+        self._report_dropped(force=True)
+
+    # Status goes to stderr, never through logging: this is the logging handler, so a logger would recurse.
+    def _insert_batch(self, batch):
+        for _ in range(2):
             try:
                 self.collection.insert_many(batch)
-            except Exception as e:
-                print(f"[MongoBatchLogger] Insert error on shutdown: {e}")
+                return
+            except errors.BulkWriteError:
+                break  # some records were written; a retry would duplicate them
+            except Exception:
+                pass
+        sys.stderr.write(f"[MongoBatchLogger] dropped {len(batch)} log records after a failed insert\n")
+
+    def _report_dropped(self, force=False):
+        now = time.monotonic()
+        if not force and now - self._last_drop_report < self.flush_interval_sec:
+            return
+        self._last_drop_report = now
+        with self._dropped_lock:
+            dropped, self._dropped = self._dropped, 0
+        if dropped:
+            sys.stderr.write(f"[MongoBatchLogger] dropped {dropped} log records: queue full\n")
 
     def stop(self):
         self._stop_event.set()

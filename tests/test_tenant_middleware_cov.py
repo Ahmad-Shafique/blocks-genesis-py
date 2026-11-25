@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from opentelemetry.trace import StatusCode
 from starlette.requests import Request
 from blocks_genesis._middlewares.tenant_middleware import (
     TenantValidationMiddleware, is_sensitive_key, sanitize_dict,
@@ -11,6 +12,7 @@ T = 'blocks_genesis._middlewares.tenant_middleware.'
 def _req(path='/api/x', headers=None, host='host'):
     r = MagicMock(spec=Request)
     r.url.path = path
+    r.scope = {'path': path, 'root_path': ''}
     r.headers = headers if headers is not None else {}
     r.query_params = {}
     r.base_url.hostname = host
@@ -59,6 +61,7 @@ async def test_dispatch_non_2xx_response(mock_ctx, mock_activity, mock_gts):
     response.body_iterator = None
     result = await mw.dispatch(request, AsyncMock(return_value=response))
     assert result.status_code == 500
+    assert not any(isinstance(c.args[0], StatusCode) for c in mock_activity.set_current_property.call_args_list if c.args)
 
 
 @pytest.mark.asyncio

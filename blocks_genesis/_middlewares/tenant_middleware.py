@@ -8,36 +8,14 @@ from urllib.parse import urlparse
 from opentelemetry.trace import StatusCode
 from blocks_genesis._auth.blocks_context import BlocksContextManager
 from blocks_genesis._lmt.activity import Activity
+from blocks_genesis._middlewares.origin_policy import is_tenant_origin_host
 from blocks_genesis._tenant.tenant import Tenant
 from blocks_genesis._tenant.tenant_service import get_tenant_service
+from blocks_genesis._lmt.redaction import SENSITIVE_KEYS, is_sensitive_key, sanitize_dict  # noqa: F401 - re-exported
 import json
-SENSITIVE_KEYS = {
-    "authorization",
-    "cookie",
-    "set-cookie",
-    "secret",
-    "x-blocks-service-key",
-    "x-api-key",
-    "token",
-    "access_token",
-    "refresh_token",
-    "password",
-}
+import logging
 
-def is_sensitive_key(key: str) -> bool:
-    if not key:
-        return False
-    key_lower = key.lower()
-    return (
-        key_lower in SENSITIVE_KEYS
-        or "token" in key_lower
-        or "secret" in key_lower
-        or "password" in key_lower
-    )
-
-def sanitize_dict(d: dict) -> dict:
-    return {k: ("[REDACTED]" if is_sensitive_key(k) else v) for k, v in d.items()}
-
+_logger = logging.getLogger(__name__)
 
 async def tee_body_iterator(
     iterator: AsyncIterator[bytes],
@@ -47,6 +25,17 @@ async def tee_body_iterator(
         on_chunk(len(chunk))
         yield chunk
 
+
+def _route_path(scope) -> str:
+    """The path below the ASGI root_path, cut only on a segment boundary (Starlette's get_route_path).
+
+    genesis-net matches on Request.Path, which excludes PathBase.
+    """
+    path = scope.get("path", "")
+    root = (scope.get("root_path") or "").rstrip("/")
+    if root and path.startswith(root) and (len(path) == len(root) or path[len(root)] == "/"):
+        return path[len(root):] or "/"
+    return path
 
 
 class TenantValidationMiddleware(BaseHTTPMiddleware):
@@ -65,13 +54,15 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
 
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        # Only apply tenant validation if path matches or starts with any included prefix
+        # Only apply tenant validation if the path, as received or below the ASGI root_path,
+        # matches or starts with any included prefix. Checking both keeps every request the
+        # received path validates (e.g. root_path "/api" with path "/api/x") validated.
         # Example: included_paths=["/api", "/custom"]
         #   /api/foo  -> validated
         #   /custom/bar -> validated
         #   /public    -> not validated
-        if not any(path == p or path.startswith(p.rstrip("/ ") + "/") for p in self.included_paths):
+        paths = (request.url.path, _route_path(request.scope))
+        if not any(path == p or path.startswith(p.rstrip("/ ") + "/") for path in paths for p in self.included_paths):
             return await call_next(request)
 
         try:
@@ -114,7 +105,6 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
                 impersonated=False
             )
             BlocksContextManager.set_context(ctx)
-            Activity.set_current_property("SecurityContext", str(ctx.__dict__))
 
             request_size = int(request.headers.get("content-length", 0))
 
@@ -136,12 +126,13 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
 
         Returns the validated Tenant, or a rejection Response when the tenant
         key/id is missing on a localhost request, the application is not found
-        or disabled, or the origin/referer is not allowed.
+        or disabled, or the origin/referer is not allowed. The last two get the
+        same 404, so a caller cannot tell whether a key exists.
         """
-        api_key = request.headers.get("x-blocks-key") or request.query_params.get("x-blocks-key") or request.query_params.get("tenant_id")
+        tenant_key = request.headers.get("x-blocks-key") or request.query_params.get("x-blocks-key") or request.query_params.get("tenant_id")
         tenant_service = get_tenant_service()
 
-        if not api_key:
+        if not tenant_key:
             request_host = request.base_url.hostname or ""
             if BlocksContextManager.is_localhost_host(request_host):
                 return self._reject(400, "BadRequest: Missing_Tenant_Key_Or_Id")
@@ -150,13 +141,16 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
             if not tenant:
                 return self._reject(404, "Not_Found: Application_Not_Found")
         else:
-            tenant = await tenant_service.get_tenant(api_key)
+            tenant = await tenant_service.get_tenant(tenant_key)
 
         if not tenant or tenant.is_disabled:
             return self._reject(404, "Not_Found: Application_Not_Found")
 
         if not self._is_valid_origin_or_referer(request, tenant):
-            return self._reject(406, "NotAcceptable: Invalid_Origin_Or_Referer")
+            # Answered exactly like an unknown tenant, so the response does not reveal
+            # whether the key exists. The real reason is only logged.
+            _logger.debug("Tenant %s refused: origin or referer is not allowed", tenant.tenant_id)
+            return self._reject(404, "Not_Found: Application_Not_Found")
 
         return tenant
 
@@ -186,12 +180,6 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
         )
         Activity.set_current_property("usage", True)
 
-        if not (200 <= response.status_code < 300):
-            Activity.set_current_property(
-                StatusCode.ERROR,
-                f"HTTP {response.status_code}"
-            )
-
         sanitized_response_headers = sanitize_dict(dict(response.headers))
         Activity.set_current_properties({
             "response.status.code": response.status_code,
@@ -208,6 +196,8 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
         )
 
     def _is_valid_origin_or_referer(self, request: Request, tenant: Tenant) -> bool:
+        """Advisory only: a browser sets Origin and Referer, but any other client can send or omit them.
+        A request with neither header is allowed, so this must not be relied on for security."""
         def extract_domain(url: str) -> str:
             try:
                 if not url:
@@ -215,27 +205,16 @@ class TenantValidationMiddleware(BaseHTTPMiddleware):
                 candidate = url if "://" in url else f"//{url}"
                 parsed = urlparse(candidate)
                 if parsed.hostname:
-                    return parsed.hostname.lower()
+                    host = parsed.hostname.lower()
+                    return host[:-1] if host.endswith(".") else host
             except Exception:
                 pass
             return BlocksContextManager.normalize_domain(url)
 
-        # Allowed domains are derived solely from the tenant's Applications array.
-        # (The legacy tenant.allowed_domains field was removed from the Tenant
-        # model to mirror the blocks-genesis-net Tenant structure.)
-        allowed = [
-            extract_domain(app.domain)
-            for app in (tenant.applications or [])
-            if app.domain
-        ]
-        
         current = (
             extract_domain(request.headers.get("origin") or "")
             or extract_domain(request.headers.get("referer") or "")
         )
 
-        return (
-            not current
-            or BlocksContextManager.is_localhost_host(current)
-            or current in allowed
-        )
+        # Allowed hosts are the tenant's application domains, plus localhost in a local deployment.
+        return not current or is_tenant_origin_host(current, tenant)
